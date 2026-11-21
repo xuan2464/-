@@ -207,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True, "config": self.config, "sizes": ALLOWED_SIZES,
                         "fps": ALLOWED_FPS})
             return
-        if path == "/api/health":
+        if path in ("/api/health", "/api/v1/health"):
             self._json({"ok": True, "version": SERVER_VERSION})
             return
         if path == "/api/motion":

@@ -4,8 +4,8 @@
 
   用法（在项目根目录双击 连接机器狗.bat 即可，也可直接跑本脚本）：
     .\tools\connect.ps1                    # 连机器狗 → 部署 → 启动 → 打开浏览器（自动挑信号源）
-    .\tools\connect.ps1 -Source ros        # 不想停 realsense 服务，改从 ROS 话题取图
-    .\tools\connect.ps1 -Source demo       # 只验证网页，不碰相机
+    .\tools\connect.ps1 -Source ros        # 走 realsense-ros 话题取图（默认就走这条）
+    .\tools\connect.ps1 -Source realsense  # 用 pyrealsense2 直连相机
     .\tools\connect.ps1 -Check             # 只看当前能不能连上、服务在不在
     .\tools\connect.ps1 -Stop              # 停掉机器狗上的服务
     .\tools\connect.ps1 -Wifi "Lite3-1234" # 先切到机器狗 WiFi（已保存过的热点）
@@ -17,7 +17,7 @@ param(
   [string]$RobotIp = '192.168.1.103',
   [string]$User = 'ysc',
   [int]$Port = 8080,
-  [ValidateSet('auto', 'realsense', 'ros', 'demo')]
+  [ValidateSet('auto', 'realsense', 'ros')]
   [string]$Source = 'auto',
   [string]$RemoteDir = '/home/ysc/camera_web',
   [string]$Wifi = '',

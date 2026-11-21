@@ -63,7 +63,18 @@ class Hub(object):
 
     # ------------------------------------------------------------------ log
     def log(self, level, msg):
-        self.logs.append({"t": time.time(), "level": level, "msg": msg})
+        # 同一条错误在重试时会被反复抛出（例如相机一直打不开），
+        # 这里把连续重复的消息合并成一条并计数，免得日志被刷屏。
+        now = time.time()
+        if self.logs:
+            last = self.logs[-1]
+            if last["level"] == level and last["msg"].split("  (×")[0] == msg:
+                n = last.get("n", 1) + 1
+                last["n"] = n
+                last["t"] = now
+                last["msg"] = "%s  (×%d)" % (msg, n)
+                return
+        self.logs.append({"t": now, "level": level, "msg": msg, "n": 1})
 
     # --------------------------------------------------------------- thread
     def start(self):

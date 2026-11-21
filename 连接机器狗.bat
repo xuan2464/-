@@ -13,8 +13,8 @@ rem  The password is one single quote character:  '
 rem  (press Shift to switch to English input first)
 rem
 rem  Optional flags, type them after the file name:
-rem    -Source ros     use the ROS topic, keep the realsense service
-rem    -Source demo    synthetic picture, do not touch the camera
+rem    -Source ros       use the realsense-ros topic (default path)
+rem    -Source realsense read the camera directly with pyrealsense2
 rem    -Check          only check: reachable? service already up?
 rem    -Stop           stop the service on the robot
 rem    -Port 8090      serve on another port

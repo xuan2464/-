@@ -1,8 +1,15 @@
+# 运行期产物
 __pycache__/
-*.py[cod]
-.venv/
-venv/
-.deps/
+*.pyc
 *.log
-.DS_Store
-Thumbs.db
+viewer.pid
+
+# 免安装依赖（pip --target 装在这里）
+.deps/
+
+# 导出的独立副本
+文件/
+
+# 开发用临时截图
+_*.png
+_tmp_*.jpg

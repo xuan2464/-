@@ -3,9 +3,8 @@
 """绝影 Lite3 相机网页实时画面 —— 启动脚本。
 
 用法示例：
-    python3 run.py                        # 自动选择信号源（RealSense 优先，失败退回演示）
-    python3 run.py --source demo          # 无机器狗，先看网页效果
-    python3 run.py --source realsense     # 直连 D435i
+    python3 run.py                        # 自动：先试 RealSense 直连，再走 ROS 话题
+    python3 run.py --source realsense     # 直连 D435i（需要 pyrealsense2）
     python3 run.py --source ros           # 订阅 realsense-ros 已发布的图像话题
 """
 
@@ -31,8 +30,8 @@ def parse_args(argv=None):
         description="绝影 Lite3 相机网页实时画面（MJPEG over HTTP）"
     )
     p.add_argument("--source", default="auto",
-                   choices=["auto", "realsense", "ros", "demo"],
-                   help="信号源：auto / realsense / ros / demo（默认 auto）")
+                   choices=["auto", "realsense", "ros"],
+                   help="信号源：auto（先 realsense 再 ros）/ realsense / ros（默认 auto）")
     p.add_argument("--host", default="0.0.0.0", help="监听地址（默认 0.0.0.0）")
     p.add_argument("--port", type=int, default=8080, help="监听端口（默认 8080）")
     p.add_argument("--width", type=int, default=640, help="画面宽度（默认 640）")
@@ -108,11 +107,12 @@ def main(argv=None):
     def factory():
         attempts[0] += 1
         if args.source == "auto":
-            if attempts[0] > 2:
-                print("  [warn] 真实相机打不开，已切换到合成演示信号源；"
-                      "用 --source realsense 可单独查看报错原因", flush=True)
-                return sources.DemoSource()
-            return sources.create_source("realsense")
+            # 第一次试 pyrealsense2 直连，之后一律走 ROS 话题
+            if attempts[0] == 1:
+                return sources.create_source("realsense")
+            return sources.create_source("ros",
+                                        color_topic=args.ros_color,
+                                        depth_topic=args.ros_depth)
         return sources.create_source(
             args.source,
             color_topic=args.ros_color,
@@ -132,8 +132,12 @@ def main(argv=None):
 
     httpd = server.serve(h, clients, cfg, host=args.host, port=args.port,
                          motion=motion_client, api_token=args.api_token)
-    banner(httpd, cfg, sources.create_source(args.source).label if args.source != "auto"
-           else "自动选择（RealSense 优先）", motion_client, args.api_token)
+    label = {
+        "auto": "自动（先 realsense，再 ROS 话题）",
+        "realsense": "Intel RealSense D435i 直连",
+        "ros": "ROS 图像话题",
+    }.get(args.source, args.source)
+    banner(httpd, cfg, label, motion_client, args.api_token)
 
     if args.open:
         import threading

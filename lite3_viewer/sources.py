@@ -1,4 +1,4 @@
-"""画面信号源：合成演示 / RealSense 直连 / ROS 图像话题。
+"""画面信号源：RealSense 直连 / ROS 图像话题。
 
 每个信号源都实现 open(width, height, fps) / read() / close()，
 read() 返回 (color_rgb, depth_m)：
@@ -33,150 +33,6 @@ class BaseSource(object):
 
 
 # --------------------------------------------------------------------------
-# 合成演示源：没有机器狗也能验证整条链路（服务端编码 / MJPEG / 前端）
-# 所有与时间无关的几何量都在 open() 里预计算成 float32 缓冲，逐帧只做少量运算，
-# 这样 640x480 也能轻松跑满 30fps。
-# --------------------------------------------------------------------------
-class DemoSource(BaseSource):
-    kind = "demo"
-    label = "合成演示信号源"
-    has_depth = True
-
-    def open(self, width, height, fps):
-        self.width = int(width)
-        self.height = int(height)
-        self.fps = max(1, int(fps))
-        self._t0 = time.time()
-        self._n = 0
-        self._last = 0.0
-        self._next = time.time()
-
-        h, w = self.height, self.width
-        yy, xx = np.mgrid[0:h, 0:w]
-        yy = yy.astype(np.float32)
-        xx = xx.astype(np.float32)
-        self._yy, self._xx = yy, xx
-        self._rows = np.arange(h, dtype=np.float32)
-
-        horizon = h * 0.40
-        below = yy > horizon
-        dy = np.maximum(yy - horizon, 1.0)
-        z = np.clip((0.55 * h) / dy, 0.3, 24.0).astype(np.float32)
-        z[~below] = 24.0
-
-        # 世界坐标（相机朝前）
-        xw = ((xx - w * 0.5) * z / (0.9 * w)).astype(np.float32)
-
-        # 静态底色：天空渐变 + 地面 + 地平线辉光 + 暗角
-        sky_t = np.clip(yy / horizon, 0.0, 1.0)[..., None].astype(np.float32)
-        sky = (np.array([7, 12, 18], np.float32) * (1.0 - sky_t)
-               + np.array([20, 44, 52], np.float32) * sky_t)
-        ground = (np.array([17, 25, 27], np.float32) + 11.0 * np.exp(-z / 6.0)[..., None])
-        base = np.where(below[..., None], ground, sky).astype(np.float32)
-
-        glow = np.exp(-((yy - horizon) ** 2) / (2 * (h * 0.013) ** 2))[..., None]
-        base += glow * np.array([26, 110, 126], np.float32) * 0.55
-
-        # 天空里的稀疏星点
-        rng = np.random.default_rng(7)
-        stars = rng.random((h, w)).astype(np.float32)
-        star_mask = (stars > 0.99955) & (~below)
-        base[star_mask] += 90.0
-
-        halo = np.clip(
-            1.0 - 0.30 * (((xx - w * 0.5) / (w * 0.5)) ** 2
-                          + ((yy - h * 0.5) / (h * 0.5)) ** 2) / 2.0, 0.6, 1.0
-        )[..., None]
-        base *= halo
-        self._base = base
-
-        # 网格：X 方向相位固定；Z 方向相位随前进滚动
-        self._fx = np.abs(((xw / 0.5) % 1.0) - 0.5).astype(np.float32)
-        self._zmod = ((z / 0.5) % 1.0).astype(np.float32)
-        self._fade = (np.exp(-z / 4.5) * below).astype(np.float32)
-        self._grid_col = np.array([54, 232, 186], np.float32) * 0.85
-
-        # 深度底图（与时间无关）
-        self._depth_base = np.where(below, z, 12.0).astype(np.float32)
-
-        # 噪声贴图，逐帧平移复用，避免每帧生成百万随机数
-        self._noise = rng.normal(0.0, 1.8, (96, 96, 3)).astype(np.float32)
-
-    # ------------------------------------------------------------------
-    def _blob(self, img, cx, cy, r, col, gain=0.9):
-        h, w = img.shape[0], img.shape[1]
-        pad = int(r * 2.6) + 2
-        x0, x1 = max(0, int(cx) - pad), min(w, int(cx) + pad + 1)
-        y0, y1 = max(0, int(cy) - pad), min(h, int(cy) + pad + 1)
-        if x1 <= x0 or y1 <= y0:
-            return
-        xs = self._xx[y0:y1, x0:x1]
-        ys = self._yy[y0:y1, x0:x1]
-        g = np.exp(-(((xs - cx) ** 2 + (ys - cy) ** 2) / (2.0 * r * r)))
-        img[y0:y1, x0:x1] += g[..., None] * np.array(col, np.float32) * gain
-
-    def _disc(self, arr, cx, cy, r, value):
-        h, w = arr.shape
-        pad = int(r) + 2
-        x0, x1 = max(0, int(cx) - pad), min(w, int(cx) + pad + 1)
-        y0, y1 = max(0, int(cy) - pad), min(h, int(cy) + pad + 1)
-        if x1 <= x0 or y1 <= y0:
-            return
-        xs = self._xx[y0:y1, x0:x1]
-        ys = self._yy[y0:y1, x0:x1]
-        arr[y0:y1, x0:x1][((xs - cx) ** 2 + (ys - cy) ** 2) < r * r] = value
-
-    # ------------------------------------------------------------------
-    def read(self):
-        # 绝对时基节流：按计划时刻出帧，渲染耗时不会被叠加成掉帧
-        interval = 1.0 / float(self.fps)
-        now = time.time()
-        if self._next > now:
-            time.sleep(self._next - now)
-            now = time.time()
-        self._next += interval
-        if self._next < now:  # 落后太多就直接对齐，不补帧
-            self._next = now
-        self._last = now
-
-        t = self._last - self._t0
-        h, w = self.height, self.width
-
-        # 网格线（Z 相位滚动）
-        fz = np.abs(((self._zmod + np.float32(t * 3.2)) % 1.0) - 0.5)
-        dist = np.minimum(self._fx, fz)
-        line = np.clip(1.0 - dist * 28.0, 0.0, 1.0) * self._fade
-        img = self._base + line[..., None] * self._grid_col
-
-        # 两个漂浮光球：直观显示画面在实时刷新
-        bob = 0.5 + 0.26 * np.sin(t * 0.7)
-        bocy = 0.60 + 0.05 * np.sin(t * 1.4)
-        self._blob(img, bob * w, bocy * h, 0.055 * h, (40, 205, 255), 0.95)
-        b2x = 0.30 + 0.14 * np.sin(-t * 0.45 + 1.3)
-        b2y = 0.72 + 0.04 * np.cos(t * 0.9)
-        self._blob(img, b2x * w, b2y * h, 0.033 * h, (255, 172, 60), 0.9)
-
-        # 向下扫过的高亮带
-        scan_y = (t * 90.0) % (h + 120) - 60
-        band = np.exp(-((self._rows - scan_y) ** 2) / (2 * (h * 0.0055) ** 2))
-        img += band[:, None, None] * np.array([20, 76, 70], np.float32)
-
-        # 轻微噪声（贴图平移复用）
-        off = int(t * 613) % 96
-        nz = np.roll(self._noise, (off, off // 3), axis=(0, 1))
-        img += np.tile(nz, (h // 96 + 2, w // 96 + 2, 1))[:h, :w]
-
-        rgb = np.clip(img, 0.0, 255.0).astype(np.uint8)
-
-        # 深度图：地面按距离，光球处偏近
-        depth = self._depth_base.copy()
-        self._disc(depth, bob * w, bocy * h, 0.055 * h, 0.9)
-
-        self._n += 1
-        return rgb, depth
-
-
-# --------------------------------------------------------------------------
 # RealSense D435i 直连（librealsense / pyrealsense2）
 # --------------------------------------------------------------------------
 class RealSenseSource(BaseSource):
@@ -189,8 +45,8 @@ class RealSenseSource(BaseSource):
             import pyrealsense2 as rs
         except Exception as exc:
             raise SourceError(
-                "无法导入 pyrealsense2（%s）。请确认感知主机已安装 librealsense 的 Python 绑定，"
-                "或用 --source demo 先查看网页效果。" % exc
+                "无法导入 pyrealsense2（%s）。请确认感知主机已安装 librealsense 的 Python 绑定；"
+                "若装不上，改用 --source ros 从 realsense-ros 话题取图。" % exc
             )
 
         self._rs = rs
@@ -341,9 +197,12 @@ def _ros_image_to_numpy(msg):
 
 # --------------------------------------------------------------------------
 def create_source(name, **kwargs):
+    """name: auto / realsense / ros。
+
+    auto 只是给一个建议顺序（装了 pyrealsense2 就直连，否则走 ROS 话题），
+    真正打不开时由 run.py 按 realsense → ros 的顺序重试，失败就报错退出。
+    """
     name = (name or "auto").lower()
-    if name == "demo":
-        return DemoSource()
     if name == "realsense":
         return RealSenseSource()
     if name == "ros":
@@ -351,10 +210,13 @@ def create_source(name, **kwargs):
             color_topic=kwargs.get("color_topic", "/camera/color/image_raw"),
             depth_topic=kwargs.get("depth_topic", "/camera/aligned_depth_to_color/image_raw"),
         )
-    # auto：优先真实相机，失败由 run.py 兜底到 demo
+    # auto
     try:
         import pyrealsense2  # noqa: F401
 
         return RealSenseSource()
     except Exception:
-        return DemoSource()
+        return RosSource(
+            color_topic=kwargs.get("color_topic", "/camera/color/image_raw"),
+            depth_topic=kwargs.get("depth_topic", "/camera/aligned_depth_to_color/image_raw"),
+        )

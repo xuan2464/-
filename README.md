@@ -11,29 +11,18 @@
 | --- | --- | --- |
 | ![彩色](docs/live-robot.png) | ![深度](docs/live-robot-depth.png) | ![双画面](docs/live-robot-dual.png) |
 
-> 下面这组是内置的**合成演示信号源**（`--source demo`）截的：手上没有机器狗时，
-> 也能先把整条链路（取帧 → 编码 → MJPEG 推流 → 网页渲染）跑通看效果。
-
-| 彩色 | 深度 | 双画面 |
-| --- | --- | --- |
-| ![彩色](docs/screenshot.png) | ![深度](docs/screenshot-depth.png) | ![双画面](docs/screenshot-dual.png) |
-
 ---
 
 ## 1. 快速开始
 
 ```bash
-python3 run.py --open        # 自动选信号源，并打开浏览器
+python3 run.py --open        # 自动选信号源（先试 pyrealsense2 直连，不行走 ROS 话题）
 ```
 
-- 没装 `pyrealsense2` 时，2 次尝试失败后自动退回合成演示画面，网页照样能看。
+- 没有画面就是没有画面：脚本不会给你塞假图，`/api/v1/status` 的 `last_error` 会写清原因。
 - 浏览器打开 <http://127.0.0.1:8080>，右侧面板顶部会显示**可分享的访问地址**。
-
-想先只看界面效果（不需要相机、不需要 numpy 之外的任何东西）：
-
-```bash
-python3 run.py --source demo
-```
+- 只想验证前端界面（不接相机）时，直接打开 `static/index.html` 之外的任何静态服务器也行，
+  但流会一直显示"等画面"，所以推荐直接用真机跑一遍。
 
 ## 2. 在机器狗上跑
 
@@ -67,13 +56,12 @@ bash tools/robot_start_camera.sh
 
 然后在本机浏览器打开 `http://192.168.1.103:8080`（PC 与机器狗接同一个局域网即可）。
 
-### 三种取图方式
+### 两种取图方式
 
 | 方式 | 命令 | 说明 |
 | --- | --- | --- |
 | **ROS 话题（这台狗上实测可用）** | `bash tools/robot_setup.sh --source ros` | 脚本自己起 `roscore` + `realsense2_camera`，不用密码；也可先 `sudo systemctl start realsense` 用官方服务，再 `python3 run.py --source ros` |
 | 直连相机 | `python3 run.py --source realsense` | 需要 `pyrealsense2` + 先 `sudo systemctl stop realsense` 释放设备（这台狗上没装绑定、也没有外网装不了） |
-| 合成画面 | `python3 run.py --source demo` | 只验证网页本身 |
 
 > 相机节点固定用 **640×480 @ 30 fps + 深度对齐彩色**：同一台机器上，默认配置
 > （1280×720 + pointcloud 滤波）会不停爆 `control_transfer returned error` /
@@ -94,7 +82,7 @@ python3 run.py --source ros --ros-color /camera/color/image_raw \
 
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
-| `--source` | `auto` | `auto` / `realsense` / `ros` / `demo` |
+| `--source` | `auto` | `auto`（先 realsense 再 ros）/ `realsense` / `ros` |
 | `--host` | `0.0.0.0` | 监听地址；只想本机看可改 `127.0.0.1` |
 | `--port` | `8080` | 端口 |
 | `--width` `--height` | `640` `480` | 分辨率，支持 640×480 / 848×480 / 960×540 / 1280×720 / 1920×1080 |
@@ -125,8 +113,8 @@ python3 run.py --source ros --ros-color /camera/color/image_raw \
 
 ```
 RealSense D435i ──pyrealsense2──┐
- 或 realsense-ros 话题 ──rospy──┤→ Hub 后台线程 → JPEG 编码（Pillow/OpenCV）
- 或 合成演示源 ─────────────────┘        │
+ 或 realsense-ros 话题 ──rospy──┴→ Hub 后台线程 → JPEG 编码（Pillow/OpenCV）
+                                        │
                                        MJPEG over HTTP（multipart/x-mixed-replace）
                                         │
                               浏览器 <img src="/stream"> 直接解码
@@ -143,7 +131,7 @@ RealSense D435i ──pyrealsense2──┐
 
 ```
 run.py                    启动入口 + 命令行参数
-lite3_viewer/sources.py   信号源：RealSense / ROS / 合成演示
+lite3_viewer/sources.py   信号源：RealSense 直连 / ROS 图像话题
 lite3_viewer/hub.py       取帧线程、帧分发、编码缓存、状态统计
 lite3_viewer/encoder.py   JPEG 编码、深度伪彩、双画面拼接
 lite3_viewer/motion.py    运动控制：UDP 指令帧、心跳、摇杆节流与死区
@@ -197,7 +185,8 @@ await fetch('http://192.168.1.103:8080/api/v1/motion/arm',
 | --- | --- |
 | 网页一直“等待画面” | 服务端没起来，或端口被占：看启动时的报错；确认 `http://IP:端口/api/health` 能返回 |
 | 事件里报 “设备忙 / 拒绝访问” | `sudo systemctl stop realsense` 释放相机，或改用 `--source ros` |
-| 报 `No module named 'pyrealsense2'` | 感知主机没装绑定；先用 `--source demo` 看界面，或走 `--source ros` |
+| 报 `No module named 'pyrealsense2'` | 感知主机没装绑定；走 `--source ros`（这台狗默认就是它） |
+| 事件里报 “相机没出画面” | 服务在跑但相机没数据：`bash tools/robot_start_camera.sh --restart`，或 `rs-enumerate-devices` 看相机是否枚举到 |
 | 帧率不到设定值 | 降低分辨率/质量；USB 线要插 USB3.0 口；Jetson 上别同时开 realsense-viewer |
 | 深度是纯色 | 深度流没拿到：确认跑的是 `--source realsense` 或 ROS 里订阅了对齐深度话题 |
 | 手机打不开 | 手机与机器狗不在同一网段；检查防火墙 `sudo ufw status` |

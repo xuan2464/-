@@ -3,7 +3,7 @@
 # 由 连接机器狗.bat / connect.ps1 自动调用，也可以自己手动跑：
 #   bash ~/camera_web/tools/robot_setup.sh                 # 自动挑信号源
 #   bash ~/camera_web/tools/robot_setup.sh --source ros    # 用 realsense-ros 话题
-#   bash ~/camera_web/tools/robot_setup.sh --source demo    # 只看界面
+#   bash ~/camera_web/tools/robot_setup.sh --source realsense  # pyrealsense2 直连
 
 # 注意：这里**不能**用 set -u。ROS 的 setup.bash 内部会引用未定义变量
 # （例如 _CATKIN_SETUP_DIR_OLD），一旦开启 nounset，source 就会立刻杀掉整个脚本，
@@ -133,8 +133,9 @@ if [ "$SOURCE" = "auto" ]; then
     SOURCE=ros
     ok "改用 realsense-ros 话题取图（ROS $ROS_DISTRO，不用停服务）"
   else
-    SOURCE=demo
-    warn "相机和 ROS 都不可用，先用合成演示画面（网页功能完全一致）"
+    err "既没有 pyrealsense2，也没有可用的 ROS 环境，取不到相机画面"
+    say "  装 pyrealsense2 或装 ROS1(noetic) + realsense2_camera 之后再来"
+    exit 1
   fi
 fi
 say "信号源   $SOURCE"
@@ -151,7 +152,7 @@ fi
 if [ "$SOURCE" = "ros" ] && [ -f "$DIR/tools/robot_start_camera.sh" ]; then
   say "启动相机节点（roscore + realsense2_camera，不需要密码）…"
   if ! bash "$DIR/tools/robot_start_camera.sh"; then
-    warn "相机节点没起来，先继续，出不了图会自动退到演示画面"
+    warn "相机节点没起来，继续启动服务，出不了图会有明确报错"
   fi
 fi
 
@@ -204,16 +205,15 @@ else
     fi
   fi
 
-  # 还是没图 → 至少先让网页能用（合成画面），相机问题留给日志
-  if [ "${N:-0}" -le 0 ] 2>/dev/null && [ "$SOURCE" != "demo" ]; then
-    warn "相机没有数据，先切到合成演示画面，保证网页能打开"
-    SOURCE=demo
-    start_service demo && N=$(wait_frames)
-    if [ "${N:-0}" -gt 0 ] 2>/dev/null; then
-      ok "演示画面已出图（$N 帧）"
-      say "相机问题排查：tail -n 60 $DIR/viewer.log"
-      say "相机好之后重跑：bash $DIR/tools/robot_setup.sh --source realsense"
-    fi
+  # 还是没图 → 直接报错，不退回任何假画面
+  if [ "${N:-0}" -le 0 ] 2>/dev/null; then
+    err "相机确实没出画面（信号源 $SOURCE），服务已起但流媒体为空"
+    say "排查顺序："
+    say "  1) tail -n 60 $DIR/viewer.log              看具体报错"
+    say "  2) rs-enumerate-devices                    看相机有没有枚举到"
+    say "  3) bash $DIR/tools/robot_start_camera.sh --restart"
+    say "  4) sudo systemctl stop realsense           释放被系统服务占用的相机"
+    exit 1
   fi
 fi
 
@@ -230,7 +230,7 @@ line
 say "浏览器打开  http://$IP:$PORT"
 say "看日志      tail -f $DIR/viewer.log"
 say "停止服务    pkill -f 'run.py --source'"
-say "换信号源    bash $DIR/tools/robot_setup.sh --source ros|realsense|demo"
+say "换信号源    bash $DIR/tools/robot_setup.sh --source ros|realsense"
 line
 ok "部署脚本执行完毕"
 echo ""

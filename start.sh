@@ -2,7 +2,7 @@
 # 绝影 Lite3 相机网页画面 —— 一键启动（Linux / 机器狗感知主机）
 #   ./start.sh                      自动选信号源
 #   ./start.sh --source ros         从 realsense-ros 话题取图
-#   ./start.sh --source demo --open 无相机时看界面
+#   ./start.sh --source realsense   pyrealsense2 直连相机
 set -e
 cd "$(dirname "$0")"
 

@@ -1,39 +1,66 @@
-绝影 Lite3 · 相机画面 + 运动控制后端（独立副本）
-====================================================
+绝影 Lite3 · 相机画面 + 运动控制 —— 这就是一份可以直接拿走的完整副本
+========================================================================
 
-这个文件夹是 C:\Users\eeeee\Desktop\机械狗 的完整副本，可以整个拷走单独使用。
-Pillow 已经打在 .deps\ 里，不需要联网 pip 安装。
+目录里已经带了免安装的 Pillow（.deps\），所以整机拷走、不联网也能跑。
 
-一、在 Windows 上本机看演示画面
-  1) 双击「本地演示.bat」（会用合成画面，不需要机械狗）
-  2) 浏览器打开 http://127.0.0.1:8080
 
-二、连真正的机械狗
-  1) 网线连机器狗，把有线网卡设成静态 192.168.1.50 / 255.255.255.0
-  2) 双击「连接机器狗.bat」，按提示输密码（机器狗登录密码是一个英文单引号 '）
-  3) 部署完成后浏览器打开 http://192.168.1.103:8080
+一、在机器狗网段上跑（真机）
+------------------------------------------------------------------------
+  1) 有线：把网线插到机器狗网口，双击「连接机器狗.bat」（会自动把网卡设成 192.168.1.50）
+     无线：先连上机器狗热点，再双击同一个 bat
+  2) 期间会让你输 2~3 次密码，密码是一个英文单引号： '   （先按 Shift 切英文输入法）
+  3) 成功后浏览器会自动打开 http://192.168.1.103:8080
+     · 画面页：实时彩色 / 深度伪彩 / 双画面
+     · 控制页：启用控制 → 站立坐下 / 步态 / 摇杆（按住才走）
 
-三、命令行启动（等价于双击）
-  python run.py --source auto --port 8080
-  python run.py --source ros        # 机器狗上走 ROS 话题（推荐）
-  python run.py --source demo       # 纯合成画面，不需要硬件
+  只想看状态、不重新部署：  连接机器狗.bat -Check
+  停掉机器狗上的服务：      连接机器狗.bat -Stop
 
-四、给别的网站/程序用的接口
-  文档：docs\API.md（curl / JS / Python 示例、CORS、令牌、错误码、UDP 协议附录）
-  能力自检：http://<地址>:8080/api/v1/info
-  在线示例：http://<地址>:8080/api-demo
-  OpenAPI：http://<地址>:8080/api/v1/openapi.json（可导入 Postman / Apifox）
 
-五、加访问令牌（暴露到公网时强烈建议）
-  python run.py --source auto --port 8080 --api-token 你的口令
-  之后写接口要带请求头 X-API-Token: 你的口令；急停 /api/v1/motion/stop 永远免令牌。
+二、在机器狗上手动跑
+------------------------------------------------------------------------
+  ssh ysc@192.168.1.103            # 密码是 '
+  cd ~/camera_web
+  bash tools/robot_setup.sh        # 自动：先试 pyrealsense2，没有再走 ROS 话题
+  tail -f viewer.log
 
-六、文件说明
-  run.py                  入口
-  lite3_viewer\           取流 / 编码 / MJPEG 服务 / 运动控制（UDP 43893）
-  static\                 网页（画面页 + 控制页 + api-demo.html 第三方接入示例）
-  docs\API.md             后端接口文档（给别的网站看的）
-  docs\*.png              真机截图
-  tools\                  部署脚本（connect.ps1 / robot_setup.sh / robot_start_camera.sh）
-  .deps\                  Pillow 便携依赖（可删除，但删了就没有 JPEG 编码器）
-  连接机器狗.md           连线、静态 IP、排错手册
+
+三、在本机跑（不接机器狗）
+------------------------------------------------------------------------
+  说明：这个项目没有任何"假画面"，没有相机就没有流。
+
+  python run.py --source ros        # 需要本机有 ROS1 + realsense-ros 话题
+  python run.py --source realsense  # 需要本机装了 pyrealsense2
+
+
+四、网页与服务
+------------------------------------------------------------------------
+  画面页        http://<IP>:8080
+  控制页        http://<IP>:8080/?tab=control
+  第三方接入示例 http://<IP>:8080/api-demo
+  后端接口文档   docs\API.md
+  OpenAPI       http://<IP>:8080/api/v1/openapi.json
+
+  给别的网站调用时建议加令牌：
+    python run.py --api-token 你的口令
+  之后写操作要带请求头 X-API-Token: 你的口令（急停接口永远免令牌）。
+
+
+五、出不了画面时
+------------------------------------------------------------------------
+  1) 看日志：机器狗上 tail -n 60 ~/camera_web/viewer.log
+  2) 相机在不在：rs-enumerate-devices
+  3) 重新拉相机节点：bash tools/robot_start_camera.sh --restart
+  4) 相机被系统服务占用：sudo systemctl stop realsense
+  5) 网页一直"等待画面"：http://<IP>:8080/api/health 是否能返回
+
+
+六、这份副本里有什么
+------------------------------------------------------------------------
+  run.py                 启动入口
+  start.sh               机器狗上的一键启动
+  lite3_viewer\          取流 / 编码 / MJPEG 服务 / 运动控制 / HTTP 接口
+  static\                网页（画面页 + 控制页 + api-demo.html）
+  docs\                  API.md、真机截图
+  tools\                 connect.ps1、robot_setup.sh、robot_start_camera.sh、set_static_ip.ps1
+  .deps\                 便携 Pillow（删了就没有 JPEG 编码，别删）
