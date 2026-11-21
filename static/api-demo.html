@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="lite3-api-token" content="__API_TOKEN__" />
+<title>Lite3 后端接入示例</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 18px; background: #06080a; color: #dfeae7;
+         font: 14px/1.6 system-ui, "Microsoft YaHei", sans-serif; }
+  h1 { font-size: 17px; margin: 0 0 4px; letter-spacing: .3px; }
+  h1 small { color: #6f8b85; font-weight: 400; font-size: 12px; margin-left: 8px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+  input, select, button {
+    font: inherit; color: #dfeae7; background: #0e1417;
+    border: 1px solid #1e2b2e; border-radius: 8px; padding: 7px 10px;
+  }
+  input { min-width: 0; }
+  #base { flex: 1 1 320px; }
+  button { cursor: pointer; transition: .15s; }
+  button:hover { border-color: #2f4b47; background: #121a1e; }
+  button.primary { background: #3fe0b0; color: #04120e; border-color: #3fe0b0; font-weight: 600; }
+  button.primary:hover { background: #58e9be; }
+  button.danger { background: #2a1113; color: #ff7a74; border-color: #5c2226; }
+  button.danger:hover { background: #3a171a; }
+  .card { border: 1px solid #16212300; border-radius: 12px; padding: 12px;
+          background: #0a0f11; box-shadow: 0 0 0 1px #131c1f inset; margin-bottom: 12px; }
+  .card h2 { font-size: 12px; letter-spacing: 1.4px; color: #6f8b85;
+             text-transform: uppercase; margin: 0 0 10px; font-weight: 600; }
+  #view { width: 100%; max-width: 640px; aspect-ratio: 4/3; background: #050708;
+          border-radius: 10px; display: block; object-fit: contain; }
+  .kv { display: grid; grid-template-columns: 92px 1fr; gap: 2px 8px;
+        font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .kv b { color: #6f8b85; font-weight: 500; }
+  .kv span { color: #cfe0dc; }
+  #log { height: 132px; overflow: auto; font-family: ui-monospace, Consolas, monospace;
+         font-size: 11.5px; color: #8fb3ac; white-space: pre-wrap; margin: 0;
+         background: #070b0d; border-radius: 8px; padding: 8px; }
+  .pad { display: grid; grid-template-columns: repeat(3, 64px); gap: 6px; }
+  .pad button { height: 46px; padding: 0; }
+  .pad .empty { visibility: hidden; }
+  .flex { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+</style>
+</head>
+<body>
+<h1>Lite3 后端接入示例 <small>这个页面本身就是一个"别的网站"，它只通过 HTTP 接口拿画面、发指令</small></h1>
+
+<div class="row">
+  <input id="base" value="http://192.168.1.103:8080" placeholder="后端地址，例如 http://192.168.1.103:8080" />
+  <input id="token" size="14" placeholder="X-API-Token（未开启可留空）" />
+  <button class="primary" id="connect">连接</button>
+  <button id="ping">测速</button>
+</div>
+
+<div class="flex">
+  <div style="flex:1 1 420px">
+    <div class="card">
+      <h2>实时画面 /api/v1/stream</h2>
+      <img id="view" alt="等待画面" />
+      <div class="row">
+        <select id="mode">
+          <option value="color">彩色</option>
+          <option value="depth">深度</option>
+          <option value="dual">双画面</option>
+        </select>
+        <button id="snap">抓拍一张</button>
+        <span id="modeHint" style="color:#6f8b85;font-size:12px"></span>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex:0 1 300px">
+    <div class="card">
+      <h2>状态 /api/v1/status</h2>
+      <div class="kv" id="status"><b>—</b><span>未连接</span></div>
+    </div>
+    <div class="card">
+      <h2>控制 /api/v1/motion</h2>
+      <div class="row">
+        <button id="arm" class="primary">启用控制</button>
+        <button id="stop" class="danger">急停</button>
+      </div>
+      <div class="row">
+        <button data-cmd="sit_stand">站立 / 坐下</button>
+        <button data-cmd="zero">回零位</button>
+        <button data-cmd="motion_mode">运动模式</button>
+        <button data-cmd="posture_mode">姿态模式</button>
+      </div>
+      <div class="row">
+        <span style="color:#6f8b85;font-size:12px">摇杆（按住才发，20Hz）</span>
+      </div>
+      <div class="row">
+        <div class="pad">
+          <span class="empty"></span>
+          <button data-axis="fwd" data-sign="1">↑</button>
+          <span class="empty"></span>
+          <button data-axis="lat" data-sign="-1">←</button>
+          <button data-axis="none">■</button>
+          <button data-axis="lat" data-sign="1">→</button>
+          <span class="empty"></span>
+          <button data-axis="fwd" data-sign="-1">↓</button>
+          <span class="empty"></span>
+        </div>
+        <div class="pad">
+          <span class="empty"></span>
+          <button data-axis="hgt" data-sign="1">抬高</button>
+          <span class="empty"></span>
+          <button data-axis="yaw" data-sign="-1">左转</button>
+          <span class="empty"></span>
+          <button data-axis="yaw" data-sign="1">右转</button>
+          <span class="empty"></span>
+          <button data-axis="hgt" data-sign="-1">降低</button>
+          <span class="empty"></span>
+        </div>
+      </div>
+      <div class="row">
+        <label style="color:#6f8b85;font-size:12px">速度</label>
+        <input id="speed" type="range" min="10" max="100" value="60" style="flex:1" />
+        <span id="speedVal" style="font-family:monospace;font-size:12px">60%</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>请求日志</h2>
+      <pre id="log"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+  var $ = function (id) { return document.getElementById(id); };
+  var logEl = $('log');
+  var base = '';
+  var token = '';
+  var live = false;
+
+  // 默认连"当前所在的后端"；从 file:// 打开时退回机器狗默认地址
+  (function initDefaults() {
+    var same = (location.protocol === 'http:' || location.protocol === 'https:');
+    $('base').value = same ? location.origin : 'http://192.168.1.103:8080';
+    var meta = document.querySelector('meta[name="lite3-api-token"]');
+    if (meta && meta.content && meta.content.indexOf('__') !== 0) {
+      $('token').value = meta.content;      // 由后端注入的令牌，开箱即用
+    }
+  })();
+
+  function log(msg) {
+    var t = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    logEl.textContent += '[' + t + '] ' + msg + '\n';
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function api(path, opt) {
+    opt = opt || {};
+    var headers = Object.assign({}, opt.headers || {});
+    if (token) headers['X-API-Token'] = token;   // 写操作靠请求头带令牌
+    if (opt.body) headers['Content-Type'] = 'application/json';
+    return fetch(base + path, {
+      method: opt.method || 'GET',
+      headers: headers,
+      body: opt.body ? JSON.stringify(opt.body) : undefined,
+      cache: 'no-store'
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  // ---------------- 画面：直接塞进 <img>，浏览器原生解码 MJPEG
+  function startStream() {
+    var mode = $('mode').value;
+    var url = base + '/api/v1/stream?mode=' + mode + '&cid=demo';
+    if (token) url += '&token=' + encodeURIComponent(token);
+    $('view').src = url;
+    log('打开画面流 ' + mode);
+  }
+
+  function refreshStatus() {
+    api('/api/v1/status').then(function (j) {
+      var f = j.frame || {};
+      var s = j.stream || {};
+      var m = j.motion || {};
+      $('status').innerHTML =
+        '<b>信号源</b><span>' + ((j.source || {}).name || '-') + '</span>' +
+        '<b>分辨率</b><span>' + ((j.config || {}).width || '?') + '×' +
+        ((j.config || {}).height || '?') + '</span>' +
+        '<b>采集帧率</b><span>' + (f.capture_fps || 0).toFixed(1) + ' fps</span>' +
+        '<b>帧龄</b><span>' + Math.round(f.age_ms || 0) + ' ms</span>' +
+        '<b>帧号</b><span>#' + (f.total || 0) + '</span>' +
+        '<b>观看人数</b><span>' + (j.viewers || 0) + '</span>' +
+        '<b>控制</b><span>' + (m.enabled ? (m.armed ? '已启用' : '待启用') : '未启用') +
+        ' · ' + (m.mode || '-') + '</span>' +
+        '<b>已发包数</b><span>' + (m.sent || 0) + '</span>';
+    }).catch(function (e) { log('状态读取失败：' + e.message); });
+  }
+
+  // ---------------- 控制
+  var armed = false;
+  function setArmed(on) {
+    api('/api/v1/motion/arm', { method: 'POST', body: { on: on } }).then(function (j) {
+      armed = !!j.armed;
+      $('arm').textContent = armed ? '解除控制' : '启用控制';
+      $('arm').classList.toggle('primary', !armed);
+      log((armed ? '已启用控制（服务端开始 2Hz 心跳）' : '已解除控制'));
+    }).catch(function (e) { log('启用失败：' + e.message); });
+  }
+
+  $('arm').onclick = function () { setArmed(!armed); };
+  $('stop').onclick = function () {
+    api('/api/v1/motion/stop', { method: 'POST', body: {} }).then(function () {
+      armed = false;
+      $('arm').textContent = '启用控制';
+      releaseAll();
+      log('已发送急停');
+    });
+  };
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-cmd]'), function (btn) {
+    btn.onclick = function () {
+      var cmd = btn.getAttribute('data-cmd');
+      if (!armed) { log('请先「启用控制」再发动作指令'); return; }
+      api('/api/v1/motion/command', { method: 'POST', body: { cmd: cmd } })
+        .then(function (j) { log('指令 ' + cmd + ' → ' + JSON.stringify(j.result || {})); })
+        .catch(function (e) { log('指令失败：' + e.message); });
+    };
+  });
+
+  // 摇杆：按住 20Hz 持续发，松手立刻发一帧 0
+  var held = { fwd: 0, lat: 0, yaw: 0, hgt: 0 };
+  var timer = null;
+
+  function axesPayload() {
+    var amp = Math.round(32767 * ($('speed').value / 100));
+    return { mode: 'move', fwd: Math.round(held.fwd * amp), lat: Math.round(held.lat * amp),
+             yaw: Math.round(held.yaw * amp), hgt: Math.round(held.hgt * amp) };
+  }
+
+  function pushAxes() {
+    if (!armed) return;
+    api('/api/v1/motion/axes', { method: 'POST', body: axesPayload() }).catch(function () {});
+  }
+
+  function startTimer() {
+    if (timer) return;
+    timer = setInterval(pushAxes, 50);   // 20Hz
+  }
+
+  function releaseAll() {
+    held = { fwd: 0, lat: 0, yaw: 0, hgt: 0 };
+    if (timer) { clearInterval(timer); timer = null; }
+    pushAxes();
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-axis]'), function (btn) {
+    var axis = btn.getAttribute('data-axis');
+    var sign = parseInt(btn.getAttribute('data-sign') || '0', 10);
+    if (axis === 'none') { btn.onclick = releaseAll; return; }
+    function down(e) {
+      e.preventDefault();
+      if (!armed) { log('请先「启用控制」'); return; }
+      held[axis] = sign;
+      btn.style.background = '#17302c';
+      startTimer();
+      pushAxes();
+    }
+    function up() {
+      held = { fwd: 0, lat: 0, yaw: 0, hgt: 0 };
+      btn.style.background = '';
+      if (timer) { clearInterval(timer); timer = null; }
+      pushAxes();
+    }
+    btn.addEventListener('pointerdown', down);
+    btn.addEventListener('pointerup', up);
+    btn.addEventListener('pointerleave', up);
+    btn.addEventListener('pointercancel', up);
+  });
+
+  $('speed').oninput = function () { $('speedVal').textContent = this.value + '%'; };
+
+  // ---------------- 连接
+  function connect() {
+    base = $('base').value.replace(/\/+$/, '');
+    token = $('token').value.trim();
+    log('连接 ' + base + (token ? '（带令牌）' : ''));
+    api('/api/v1/info').then(function (j) {
+      live = true;
+      log('已连接：' + (j.kind || '-') + ' · API ' + j.api + ' · 服务 ' + j.server);
+      log('信号源：' + ((j.source || {}).name || '-') +
+          ' · 运动控制 ' + (j.motion && j.motion.enabled ? '可用' : '不可用'));
+      if (j.token_required && !token) log('注意：服务端开启了令牌校验，请在令牌框填 X-API-Token');
+      $('modeHint').textContent = '支持模式：' + (j.modes || []).join(' / ');
+      startStream();
+      refreshStatus();
+      setInterval(refreshStatus, 1000);
+    }).catch(function (e) {
+      log('连接失败：' + e.message + '（检查地址/端口/网线，后端需与本机同网络）');
+    });
+  }
+
+  $('connect').onclick = connect;
+  $('mode').onchange = function () { if (live) startStream(); };
+  $('snap').onclick = function () {
+    var url = base + '/api/v1/snapshot.jpg?mode=' + $('mode').value;
+    if (token) url += '&token=' + encodeURIComponent(token);
+    window.open(url, '_blank');
+    log('已开新窗口取单帧 JPEG');
+  };
+  $('ping').onclick = function () {
+    var t0 = performance.now();
+    api('/api/v1/ping').then(function () {
+      log('往返 ' + Math.round(performance.now() - t0) + ' ms');
+    }).catch(function (e) { log('测速失败：' + e.message); });
+  };
+
+  connect();
+</script>
+</body>
+</html>

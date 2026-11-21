@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#06080a" />
+<!-- 开启 --api-token 时由服务端替换；未开启则保持占位符，前端据此决定是否带令牌 -->
+<meta name="lite3-api-token" content="__API_TOKEN__" />
+<title>绝影 Lite3 · 实时画面</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">L3</span>
+      <span class="brand-text">
+        <b>DEEP ROBOTICS · LITE3</b>
+        <i>相机实时画面 / CAMERA FEED</i>
+      </span>
+    </div>
+    <div class="topbar-right">
+      <div class="pill" id="statusPill"><span class="dot"></span><span id="statusText">连接中</span></div>
+      <div class="clock" id="clock">--:--:--</div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <div class="stage-wrap">
+      <section class="stage" id="stage">
+        <img id="stream" alt="Lite3 相机实时画面" />
+        <div class="vignette"></div>
+
+        <span class="corner tl"></span>
+        <span class="corner tr"></span>
+        <span class="corner bl"></span>
+        <span class="corner br"></span>
+
+        <div class="hud hud-tl">
+          <span class="rec"><i></i>LIVE</span>
+          <span class="hud-src" id="hudSource">—</span>
+        </div>
+        <div class="hud hud-tr">
+          <span id="hudRes">—</span>
+          <span class="sep">/</span>
+          <span id="hudFps">—</span>
+        </div>
+        <div class="hud hud-bl"><span id="hudMode">彩色</span></div>
+        <div class="hud hud-br"><span id="hudTime">--:--:--.---</span></div>
+
+        <div class="overlay" id="overlay">
+          <div class="spinner" id="spinner"></div>
+          <p id="overlayText">正在建立视频流…</p>
+          <button class="btn small" id="retryBtn" hidden>立即重连</button>
+        </div>
+
+        <div class="legend" id="depthLegend">
+          <span class="legend-cap">深度</span>
+          <span class="legend-bar"></span>
+          <span class="legend-ticks"><b id="legendNear">0.2</b><b id="legendMid">1.4</b><b id="legendFar">2.5</b></span>
+          <span class="legend-unit">m</span>
+        </div>
+      </section>
+    </div>
+
+    <aside class="panel">
+      <div class="tabs" id="panelTabs">
+        <button data-tab="monitor" class="active">画面</button>
+        <button data-tab="control">控制</button>
+      </div>
+
+      <div class="tabpage" data-page="monitor">
+      <section class="block">
+        <h2>STREAM <span class="h2-hint" id="viewerCount">—</span></h2>
+        <dl class="metrics">
+          <div><dt>信号源</dt><dd id="mSource" class="wide">—</dd></div>
+          <div><dt>分辨率</dt><dd id="mRes">—</dd></div>
+          <div><dt>采集帧率</dt><dd id="mFps">—</dd></div>
+          <div><dt>传输帧率</dt><dd id="mStreamFps">—</dd></div>
+          <div><dt>码率</dt><dd id="mBitrate">—</dd></div>
+          <div><dt>帧龄</dt><dd id="mAge">—</dd></div>
+          <div><dt>帧号</dt><dd id="mFrame">—</dd></div>
+        </dl>
+        <canvas id="chart" height="54"></canvas>
+        <div class="addr-row">
+          <code id="addrText">—</code>
+          <button class="mini" id="copyBtn" title="复制地址">复制</button>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2>显示模式</h2>
+        <div class="segmented" id="modeGroup">
+          <button data-mode="color" class="active">彩色</button>
+          <button data-mode="depth">深度</button>
+          <button data-mode="dual">双画面</button>
+        </div>
+      </section>
+
+      <section class="block">
+        <h2>画质</h2>
+        <label class="field">
+          <span>分辨率</span>
+          <select id="sizeSelect"></select>
+        </label>
+        <label class="field">
+          <span>帧率</span>
+          <select id="fpsSelect"></select>
+        </label>
+        <label class="field">
+          <span>JPEG 质量</span>
+          <input id="quality" type="range" min="40" max="95" step="5" value="80" />
+          <b id="qualityVal">80</b>
+        </label>
+        <label class="field" id="depthFarRow">
+          <span>深度远端</span>
+          <input id="depthFar" type="range" min="1" max="8" step="0.5" value="2.5" />
+          <b id="depthFarVal">2.5m</b>
+        </label>
+      </section>
+
+      <section class="block actions">
+        <button class="btn primary" id="snapBtn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13.5" r="3.4"/></svg>
+          抓拍
+        </button>
+        <button class="btn" id="fsBtn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+          全屏
+        </button>
+      </section>
+
+      <section class="block log-block">
+        <h2>事件</h2>
+        <ul class="log" id="log"></ul>
+      </section>
+      </div>
+
+      <div class="tabpage" data-page="control" hidden>
+        <section class="block">
+          <h2>运动控制 <span class="h2-hint" id="motionHint">未启用</span></h2>
+          <div class="arm-row">
+            <button class="btn primary" id="armBtn">启用控制</button>
+            <button class="btn danger" id="stopBtn">急停 STOP</button>
+          </div>
+          <p class="tip" id="motionTip">启用后才会下发摇杆指令；急停任何时候都能按。</p>
+        </section>
+
+        <section class="block">
+          <h2>基本动作</h2>
+          <div class="grid2">
+            <button class="btn ghost" data-cmd="sit_stand">站立 / 坐下</button>
+            <button class="btn ghost" data-cmd="zero">回零位</button>
+            <button class="btn ghost" data-cmd="posture_mode" id="modePosture">姿态模式</button>
+            <button class="btn ghost" data-cmd="motion_mode" id="modeMotion">运动模式</button>
+          </div>
+        </section>
+
+        <section class="block">
+          <h2>步态 <span class="h2-hint">仅运动模式</span></h2>
+          <div class="grid2">
+            <button class="btn ghost" data-cmd="gait_slow">慢速</button>
+            <button class="btn ghost" data-cmd="gait_mid">中速</button>
+            <button class="btn ghost" data-cmd="gait_fast">高速</button>
+            <button class="btn ghost" data-cmd="gait_crawl">爬行</button>
+            <button class="btn ghost" data-cmd="gait_rug_normal">RUG 普通</button>
+            <button class="btn ghost" data-cmd="gait_rug_grip">RUG 抓地</button>
+          </div>
+        </section>
+
+        <section class="block">
+          <h2>摇杆 <span class="h2-hint" id="padMode">移动</span></h2>
+          <div class="pad">
+            <button class="pad-btn up" data-axis="fwd" data-sign="1"><b>↑</b><i data-label="up">前进</i></button>
+            <button class="pad-btn left" data-axis="lat" data-sign="-1"><b>←</b><i data-label="left">左移</i></button>
+            <button class="pad-center" id="padStop" title="松开全部方向">■</button>
+            <button class="pad-btn right" data-axis="lat" data-sign="1"><b>→</b><i data-label="right">右移</i></button>
+            <button class="pad-btn down" data-axis="fwd" data-sign="-1"><b>↓</b><i data-label="down">后退</i></button>
+          </div>
+          <div class="grid2 turn-row">
+            <button class="btn ghost pad-hold" data-axis="yaw" data-sign="-1"><i data-label="yawL">↺ 左转</i></button>
+            <button class="btn ghost pad-hold" data-axis="yaw" data-sign="1"><i data-label="yawR">↻ 右转</i></button>
+            <button class="btn ghost pad-hold" data-axis="hgt" data-sign="1"><i data-label="hgtUp">⬆ 抬高</i></button>
+            <button class="btn ghost pad-hold" data-axis="hgt" data-sign="-1"><i data-label="hgtDown">⬇ 降低</i></button>
+          </div>
+          <label class="field speed-row">
+            <span>速度</span>
+            <input id="speed" type="range" min="20" max="100" step="5" value="60" />
+            <b id="speedVal">60%</b>
+          </label>
+          <p class="tip">按住方向键或 <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>Q</kbd><kbd>E</kbd> 移动，松手即停。</p>
+        </section>
+
+        <section class="block">
+          <h2>发送情况</h2>
+          <dl class="metrics">
+            <div><dt>目标</dt><dd id="mTarget" class="wide">—</dd></div>
+            <div><dt>已发送</dt><dd id="mSent">—</dd></div>
+            <div><dt>最近指令</dt><dd id="mLastCmd" class="wide">—</dd></div>
+            <div><dt>摇杆量</dt><dd id="mAxes" class="wide">—</dd></div>
+          </dl>
+        </section>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 模式</span>
+    <span><kbd>S</kbd> 抓拍</span>
+    <span><kbd>F</kbd> 全屏</span>
+    <span><kbd>R</kbd> 重连</span>
+    <span class="spacer"></span>
+    <span id="footerState">—</span>
+  </footer>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
